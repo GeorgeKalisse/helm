@@ -1,0 +1,4 @@
+apiVersion: v1
+description: nginx-ingress
+name: nginx-ingress
+version: 1.0.0
