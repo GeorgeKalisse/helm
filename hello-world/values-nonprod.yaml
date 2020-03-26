@@ -8,7 +8,9 @@ image:
   repository: georgekalisse/helloworld
   tag: latest
   pullPolicy: IfNotPresent
-  containerEnv: []
+  containerEnv:
+    - name: CLUSTER
+      value: non-prod
 imagePullSecrets:
   - name: regcred
 nameOverride: ""
@@ -44,7 +46,7 @@ ingress:
     kubernetes.io/ingress.class: nginx
     # kubernetes.io/tls-acme: "true"
   hosts:
-    - host: helloworld.gkdomain.com
+    - host: helloworld-np.gkdomain.com
       paths:
         - /
   tls: []

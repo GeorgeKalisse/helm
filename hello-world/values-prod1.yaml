@@ -8,7 +8,9 @@ image:
   repository: georgekalisse/helloworld
   tag: latest
   pullPolicy: IfNotPresent
-  containerEnv: []
+  containerEnv:
+    - name: CLUSTER
+      value: prod1
 imagePullSecrets:
   - name: regcred
 nameOverride: ""
