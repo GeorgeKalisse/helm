@@ -1,0 +1,317 @@
+jenkins:
+  #namespaceOverride: jenkins
+  master:
+    image: "jenkins/jenkins"
+    tag: "2.226"
+    imagePullPolicy: "Always"
+    useSecurity: true
+    # enables configuration done directly via XML files
+    # People who want to configure Jenkins via https://github.com/jenkinsci/configuration-as-code-plugin only can set it to false
+    enableXmlConfig: false
+    containerEnv:
+      - name: GEORGE-USR
+        valueFrom:
+          secretKeyRef:
+            name: github
+            key: username
+      - name: GEORGE-TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: github
+            key: token
+      - name: NONPROD-TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: deployer-tokens
+            key: nonprod-token
+      - name: PROD1-TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: deployer-tokens
+            key: prod1-token
+      - name: DOCKERCONFIGJSON
+        valueFrom:
+          secretKeyRef:
+            name: regcred
+            key: .dockerconfigjson
+      - name: SLACK-BOT
+        valueFrom:
+          secretKeyRef:
+            name: slack-token
+            key: token
+    # Set min/max heap here if needed with:
+    #javaOpts: "-Xms2048m -Xmx2048m -Djavax.net.ssl.trustStore=/deployments/keystore/truststore.jks"
+    javaOpts: "-Xms2048m -Xmx2048m"
+    # Enable pod security context (must be `true` if runAsUser or fsGroup are set)
+    usePodSecurityContext: true
+    # Set runAsUser to 1000 to let Jenkins run as non-root user 'jenkins' which exists in 'jenkins/jenkins' docker image.
+    # When setting runAsUser to a different value than 0 also set fsGroup to the same value:
+    runAsUser: 1000
+    fsGroup: 1000
+    servicePort: 8080
+    targetPort: 8080
+    csrf:
+      defaultCrumbIssuer:
+        enabled: false
+        proxyCompatability: true
+    slaveKubernetesNamespace: jenkins-slaves
+    # List of plugins to be install during Jenkins master start
+    installPlugins:
+      - basic-branch-build-strategies:1.3.2
+      - build-timeout:1.19.1
+      - build-timestamp:1.0.3
+      - config-file-provider:3.6.3
+      - configuration-as-code:1.36
+      - credentials-binding:1.21
+      - credentials:2.3.3
+      - git:4.2.2
+      - github-api:1.106
+      - google-kubernetes-engine:0.8.1
+      - ignore-committer-strategy:1.0.4
+      - job-dsl:1.77
+      - kubernetes-cli:1.8.2
+      - kubernetes-client-api:4.8.0-1
+      - kubernetes-credentials-provider:0.13
+      - kubernetes-credentials:0.6.2
+      - kubernetes:1.25.0
+      - kubernetes-cd:2.3.0
+      - pipeline-utility-steps:2.5.0
+      - slack:2.37
+      - timestamper:1.11.2
+      - workflow-aggregator:2.6
+      - workflow-cps-global-lib:2.16
+      - workflow-job:2.37
+    # Enable to always override the installed plugins with the values of 'master.installPlugins' on upgrade or redeployment.
+    overwritePlugins: true
+    # Below is the implementation of Jenkins Configuration as Code.  Add a key under configScripts for each configuration area,
+    # where each corresponds to a plugin or section of the UI.  Each key (prior to | character) is just a label, and can be any value.
+    # Keys are only used to give the section a meaningful name.  The only restriction is they may only contain RFC 1123 \ DNS label
+    # characters: lowercase letters, numbers, and hyphens.  The keys become the name of a configuration yaml file on the master in
+    # /var/jenkins_home/casc_configs (by default) and will be processed by the Configuration as Code Plugin.  The lines after each |
+    # become the content of the configuration yaml file.  The first line after this is a JCasC root element, eg jenkins, credentials,
+    # etc.  Best reference is https://<jenkins_url>/configuration-as-code/reference.  The example below creates a welcome message:
+    JCasC:
+      enabled: enabled
+      defaultConfig: false
+      pluginVersion: "1.36"
+      # it's only used when plugin version is <=1.18 for later version the
+      # configuration as code support plugin is no longer needed
+      supportPluginVersion: "1.18"
+      configScripts:
+        main: |-
+          jenkins:
+            systemMessage: Welcome to jenkins
+            agentProtocols:
+              - "JNLP4-connect"
+              - "Ping"
+            mode: EXCLUSIVE
+            numExecutors: 1
+            quietPeriod: 5
+            scmCheckoutRetryCount: 4
+            slaveAgentPort: 50000
+            clouds:
+              - kubernetes:
+                  containerCapStr: "15"
+                  defaultsProviderTemplate: "jnlp-default"
+                  jenkinsTunnel: "jenkins-agent.jenkins:50000"
+                  jenkinsUrl: "http://jenkins.jenkins:8080"
+                  maxRequestsPerHostStr: "32"
+                  name: kubernetes
+                  namespace: jenkins-slaves
+                  serverUrl: "https://kubernetes.default"
+                  templates:
+                    - name: jnlp-default
+                      label: "jnlp"
+                      serviceAccount: jenkins-agent
+                      #imagePullSecrets:
+                      #  - name: "regcred"
+                      containers:
+                        - name: jnlp
+                          image: "jenkins/jnlp-slave:4.0.1-1"
+                          args: "^${computer.jnlpmac} ^${computer.name}"
+                          command: "jenkins-slave"
+                          ttyEnabled: true
+                          privileged: false
+                          resourceLimitCpu: "1"
+                          resourceLimitMemory: 1Gi
+                          resourceRequestCpu: "0.5"
+                          resourceRequestMemory: 500Mi
+                      yamlMergeStrategy: merge
+                      yaml: |-
+                        spec:
+                          securityContext:
+                            runAsNonRoot: true
+                            fsGroup: 2000
+          security:
+            scriptApproval:
+              approvedSignatures:
+                - staticMethod java.lang.System getProperty java.lang.String
+                - staticMethod groovy.util.Eval me java.lang.String java.lang.Object java.lang.String
+                - staticMethod org.codehaus.groovy.runtime.DefaultGroovyMethods getAt java.util.List java.util.Collection
+                - method org.jenkinsci.plugins.workflow.support.steps.build.RunWrapper getRawBuild
+                - method hudson.model.Run getPreviousBuildInProgress
+                - staticMethod org.codehaus.groovy.runtime.DefaultGroovyMethods isCase java.lang.Class java.lang.Object
+                - staticMethod org.codehaus.groovy.runtime.DefaultGroovyMethods getAt java.lang.Object java.lang.String
+            globalJobDslSecurityConfiguration:
+              useScriptSecurity: false
+          credentials:
+            system:
+              domainCredentials:
+                 - credentials:
+                    - usernamePassword:
+                        scope: GLOBAL
+                        id: "george-github"
+                        username: "${GEORGE-USR}"
+                        password: "${GEORGE-TOKEN}"
+                    - string:
+                        id: "nonprod-token"
+                        scope: GLOBAL
+                        secret: "${NONPROD-TOKEN}"
+                    - string:
+                        id: "prod1-token"
+                        scope: GLOBAL
+                        secret: "${PROD1-TOKEN}"
+                    - string:
+                        id: "dockerconfigjson"
+                        scope: GLOBAL
+                        secret: "${DOCKERCONFIGJSON}"
+                    - string:
+                        id: "slack-bot"
+                        scope: GLOBAL
+                        secret: "${SLACK-BOT}"
+                    #- kubeconfig:
+                    #  id: "nonprod-kubeconfig"
+                    #  scope: GLOBAL
+                    #  kubeconfigSource:
+                    #    fileOnMaster:
+                    #      kubeconfigFile: "/var/jenkins_home/kubeconfig_files/nonprod_config"
+          unclassified:
+            gitscm:
+              globalConfigName: Jenkins
+              globalConfigEmail: jenkins@gkdomain.com
+              createAccountBasedOnEmail: false
+            location:
+              url: "https://jenkins.gkdomain.com/"
+              adminAddress: "address not configured yet <nobody@nowhere>"
+            timestamperConfig:
+              allPipelines: true
+              elapsedTimeFormat: "yyyy-MM-dd'T'HH:mm:ss'Z'"
+              systemTimeFormat: "yyyy-MM-dd'T'HH:mm:ss'Z'"
+            buildTimestamp:
+              enableBuildTimestamp: true
+              pattern: "yyyy-MM-dd'T'HH:mm:ss'Z'"
+              timezone: ""
+            slackNotifier:
+              botUser: true
+              iconEmoji: ":jenkins:"
+              room: "#gk-mission"
+              sendAsText: true
+              teamDomain: "gk-mission"
+              tokenCredentialId: "slack-bot"
+          jobs:
+            - script: >
+                pipelineJob('hello-world') {
+                  triggers {
+                    //cron('* * * * *')
+                    cron('@monthly')
+                  }
+                  displayName('hello-world')
+                  description('hello-world')
+                  definition {
+                    cpsScm {
+                      scriptPath('Jenkinsfile')
+                      scm {
+                        git {
+                          remote {
+                            url('https://github.com/GeorgeKalisse/hello-world-node.git')
+                            credentials('george-github')
+                            }
+                          extensions {}  // required as otherwise it may try to tag the repo, which you may not want
+                        }
+                      }
+                    }
+                  }
+                }
+    # Optionally specify additional init-containers
+    customInitContainers: []
+    sidecars:
+      configAutoReload:
+        # If enabled: true, Jenkins Configuration as Code will be reloaded on-the-fly without a reboot.  If false or not-specified,
+        # jcasc changes will cause a reboot and will only be applied at the subsequent start-up.  Auto-reload uses the Jenkins CLI
+        # over SSH to reapply config when changes to the configScripts are detected.  The admin user (or account you specify in
+        # master.adminUser) will have a random SSH private key (RSA 4096) assigned unless you specify adminSshKey.  This will be saved to a k8s secret.
+        enabled: true
+        image: kiwigrid/k8s-sidecar:0.1.20
+        imagePullPolicy: IfNotPresent
+      # Allows you to inject additional/other sidecars
+      other: []
+
+    # By default, the configMap is only used to set the initial config the first time
+    # that the chart is installed.  Setting `overwriteConfig` to `true` will overwrite
+    # the jenkins config with the contents of the configMap every time the pod starts.
+    # This will also overwrite all init scripts
+    overwriteConfig: true
+
+    # By default, the Jobs Map is only used to set the initial jobs the first time
+    # that the chart is installed.  Setting `overwriteJobs` to `true` will overwrite
+    # the jenkins jobs configuration with the contents of Jobs every time the pod starts.
+    overwriteJobs: true
+
+    ingress:
+      enabled: true
+      # For Kubernetes v1.14+, use 'networking.k8s.io/v1beta1'
+      apiVersion: "networking.k8s.io/v1beta1"
+      labels: {}
+      annotations:
+        kubernetes.io/ingress.class: nginx
+      # configures the hostname e.g. jenkins.example.com
+      hostName: jenkins.gkdomain.com
+      tls:
+      #- secretName: jenkins-ingress-ssl
+      #  hosts:
+      #    - jenkins.gkdomain.com
+
+    additionalConfig: {}
+
+    # Can be used to disable rendering master test resources when using helm template
+    testEnabled: false
+
+  agent:
+    enabled: false
+
+  persistence:
+    enabled: false
+    ## A manually managed Persistent Volume and Claim
+    ## Requires persistence.enabled: true
+    ## If defined, PVC must be created manually before volume will be bound
+    existingClaim:
+    ## jenkins data Persistent Volume Storage Class
+    ## If defined, storageClassName: <storageClass>
+    ## If set to "-", storageClassName: "", which disables dynamic provisioning
+    ## If undefined (the default) or set to null, no storageClassName spec is
+    ##   set, choosing the default provisioner.  (gp2 on AWS, standard on
+    ##   GKE, AWS & OpenStack)
+    ##
+    storageClass:
+    annotations: {}
+    accessMode: "ReadWriteOnce"
+    size: "8Gi"
+    volumes:
+      #- name: test
+      #  emptyDir: {}
+
+    mounts:
+      #- mountPath: /var/jenkins_home/test
+      #  name: test
+
+  ## Install Default RBAC roles and bindings
+  rbac:
+    create: true
+    readSecrets: true
+
+  serviceAccount:
+    create: false
+
+  serviceAccountAgent:
+    # Specifies whether a ServiceAccount should be created
+    create: true
