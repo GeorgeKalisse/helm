@@ -65,7 +65,9 @@ jenkins:
       - credentials-binding:1.21
       - credentials:2.3.3
       - git:4.2.2
+      - github:1.29.5
       - github-api:1.106
+      - github-branch-source:2.6.0
       - google-kubernetes-engine:0.8.1
       - ignore-committer-strategy:1.0.4
       - job-dsl:1.77
@@ -109,6 +111,9 @@ jenkins:
             quietPeriod: 5
             scmCheckoutRetryCount: 4
             slaveAgentPort: 50000
+            crumbIssuer:
+              standard:
+                excludeClientIPFromCrumb: true
             clouds:
               - kubernetes:
                   containerCapStr: "15"
